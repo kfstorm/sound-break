@@ -114,7 +114,8 @@ impl MonitoringService {
         };
 
         // Check music status
-        let music_status = MusicController::is_music_playing().ok();
+        let music_controller = MusicController::new();
+        let music_status = music_controller.get_music_status();
 
         let now_in_meeting = meeting_status.in_meeting;
         let was_previously_in_meeting = *self.was_in_meeting.lock().unwrap();
@@ -122,21 +123,19 @@ impl MonitoringService {
         // Handle meeting state transitions
         if now_in_meeting && !was_previously_in_meeting {
             // Entering meeting - pause music if playing
-            if let Ok(music_status) = MusicController::is_music_playing() {
-                if music_status.is_playing {
-                    *self.music_was_playing_before_meeting.lock().unwrap() = true;
-                    if let Ok(result) = MusicController::execute_action(MusicAction::Pause) {
-                        let mut status_guard = self.status.lock().unwrap();
-                        status_guard.last_action = Some(format!("Meeting started: {}", result));
-                        println!("SoundBreak: Paused music for meeting - {}", result);
-                    }
+            if music_status.is_playing {
+                *self.music_was_playing_before_meeting.lock().unwrap() = true;
+                if let Ok(result) = music_controller.execute_action(MusicAction::Pause) {
+                    let mut status_guard = self.status.lock().unwrap();
+                    status_guard.last_action = Some(format!("Meeting started: {}", result));
+                    println!("SoundBreak: Paused music for meeting - {}", result);
                 }
             }
             *self.was_in_meeting.lock().unwrap() = true;
         } else if !now_in_meeting && was_previously_in_meeting {
             // Exiting meeting - resume music if it was playing before
             if *self.music_was_playing_before_meeting.lock().unwrap() {
-                if let Ok(result) = MusicController::execute_action(MusicAction::Resume) {
+                if let Ok(result) = music_controller.execute_action(MusicAction::Play) {
                     let mut status_guard = self.status.lock().unwrap();
                     status_guard.last_action = Some(format!("Meeting ended: {}", result));
                     println!("SoundBreak: Resumed music after meeting - {}", result);
@@ -150,7 +149,7 @@ impl MonitoringService {
         {
             let mut status_guard = self.status.lock().unwrap();
             status_guard.meeting_status = Some(meeting_status);
-            status_guard.music_status = music_status;
+            status_guard.music_status = Some(music_status);
             status_guard.last_check = now
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -166,8 +165,14 @@ impl MonitoringService {
         self.status.lock().unwrap().clone()
     }
 
-    pub fn is_monitoring(&self) -> bool {
-        *self.is_running.lock().unwrap()
+    pub fn get_meeting_config(&self) -> crate::meeting_detector::MeetingConfig {
+        let detector = self.detector.lock().unwrap();
+        detector.get_config().clone()
+    }
+
+    pub fn update_meeting_config(&mut self, config: crate::meeting_detector::MeetingConfig) {
+        let mut detector = self.detector.lock().unwrap();
+        detector.update_config(config);
     }
 }
 

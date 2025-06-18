@@ -2,7 +2,7 @@ mod meeting_detector;
 mod music_controller;
 mod monitoring_service;
 
-use meeting_detector::MeetingStatus;
+use meeting_detector::{MeetingStatus, MeetingConfig};
 use music_controller::{MusicAction, MusicStatus};
 use monitoring_service::{MonitoringService, MonitoringStatus};
 use std::sync::Mutex;
@@ -40,19 +40,20 @@ async fn get_monitoring_status(state: tauri::State<'_, AppState>) -> Result<Moni
 
 #[tauri::command]
 async fn get_music_status() -> Result<MusicStatus, String> {
-    music_controller::MusicController::is_music_playing()
+    let controller = music_controller::MusicController::new();
+    Ok(controller.get_music_status())
 }
 
 #[tauri::command]
 async fn control_music(action: String) -> Result<String, String> {
     let music_action = match action.as_str() {
+        "play" => MusicAction::Play,
         "pause" => MusicAction::Pause,
-        "resume" => MusicAction::Resume,
-        "toggle" => MusicAction::Toggle,
-        _ => return Err("Invalid music action".to_string()),
+        _ => return Err("Invalid music action. Only 'play' and 'pause' are supported.".to_string()),
     };
-    
-    music_controller::MusicController::execute_action(music_action)
+
+    let controller = music_controller::MusicController::new();
+    controller.execute_action(music_action)
 }
 
 #[tauri::command]
@@ -60,6 +61,19 @@ async fn detect_meetings(state: tauri::State<'_, AppState>) -> Result<MeetingSta
     let _service = state.monitoring_service.lock().unwrap();
     let mut detector = meeting_detector::MeetingDetector::new();
     Ok(detector.detect_meetings())
+}
+
+#[tauri::command]
+async fn get_meeting_config(state: tauri::State<'_, AppState>) -> Result<MeetingConfig, String> {
+    let service = state.monitoring_service.lock().unwrap();
+    Ok(service.get_meeting_config())
+}
+
+#[tauri::command]
+async fn update_meeting_config(state: tauri::State<'_, AppState>, config: MeetingConfig) -> Result<String, String> {
+    let mut service = state.monitoring_service.lock().unwrap();
+    service.update_meeting_config(config);
+    Ok("Meeting configuration updated successfully".to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -76,14 +90,14 @@ pub fn run() {
             let toggle = MenuItem::with_id(app, "toggle", "Toggle Monitoring", true, None::<&str>)?;
             let status = MenuItem::with_id(app, "status", "Show Status", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit SoundBreak", true, None::<&str>)?;
-            
+
             let menu = MenuBuilder::new(app)
                 .item(&toggle)
                 .item(&status)
                 .separator()
                 .item(&quit)
                 .build()?;
-            
+
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
@@ -109,7 +123,7 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -119,7 +133,9 @@ pub fn run() {
             get_monitoring_status,
             get_music_status,
             control_music,
-            detect_meetings
+            detect_meetings,
+            get_meeting_config,
+            update_meeting_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

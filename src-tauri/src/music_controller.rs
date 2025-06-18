@@ -4,15 +4,12 @@ use std::process::Command;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MusicStatus {
     pub is_playing: bool,
-    pub player_name: Option<String>,
-    pub track_info: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MusicAction {
+    Play,
     Pause,
-    Resume,
-    Toggle,
 }
 
 pub struct MusicController;
@@ -22,218 +19,104 @@ impl MusicController {
         Self
     }
 
-    /// Check if music is currently playing using macOS Media Player API
-    pub fn is_music_playing() -> Result<MusicStatus, String> {
-        // Check if any music is playing using AppleScript to query the Now Playing info
-        let script = r#"
-            tell application "System Events"
-                try
-                    set isPlaying to false
-                    set playerName to ""
-                    set trackInfo to ""
-                    
-                    -- Check if Spotify is running without launching it
-                    set spotifyRunning to false
-                    repeat with proc in (every process whose name is "Spotify")
-                        set spotifyRunning to true
-                        exit repeat
-                    end repeat
-                    
-                    if spotifyRunning then
-                        tell application "Spotify"
-                            if player state is playing then
-                                set isPlaying to true
-                                set playerName to "Spotify"
-                                set trackInfo to (artist of current track) & " - " & (name of current track)
-                            end if
-                        end tell
-                    end if
-                    
-                    -- Check if Music app is running without launching it
-                    if not isPlaying then
-                        set musicRunning to false
-                        repeat with proc in (every process whose name is "Music")
-                            set musicRunning to true
-                            exit repeat
-                        end repeat
-                        
-                        if musicRunning then
-                            tell application "Music"
-                                if player state is playing then
-                                    set isPlaying to true
-                                    set playerName to "Music"
-                                    try
-                                        set trackInfo to (artist of current track) & " - " & (name of current track)
-                                    on error
-                                        set trackInfo to "Unknown Track"
-                                    end try
-                                end if
-                            end tell
-                        end if
-                    end if
-                    
-                    return (isPlaying as string) & "|" & playerName & "|" & trackInfo
-                on error errMsg
-                    return "false||Error: " & errMsg
-                end try
-            end tell
-        "#;
+    pub fn get_music_status(&self) -> MusicStatus {
+        // Only check for system-wide audio activity
+        let is_playing = self.is_system_audio_playing();
 
-        match Command::new("osascript").arg("-e").arg(script).output() {
+        MusicStatus {
+            is_playing,
+        }
+    }
+
+
+    fn is_system_audio_playing(&self) -> bool {
+        // Method 1: Check for audio assertions (most reliable universal method)
+        if self.has_audio_assertions() {
+            return true;
+        }
+
+        // Method 2: Check for active audio processes
+        self.has_active_audio_processes()
+    }
+
+    fn has_audio_assertions(&self) -> bool {
+        // Check if coreaudiod has active audio assertions (prevents system sleep during audio playback)
+        match Command::new("pmset").arg("-g").arg("assertions").output() {
+            Ok(output) => {
+                let assertions_output = String::from_utf8_lossy(&output.stdout);
+                // Look for audio-related assertions that prevent sleep
+                assertions_output.contains("coreaudiod") &&
+                (assertions_output.contains("PreventUserIdleSystemSleep") ||
+                 assertions_output.contains("audio-out") ||
+                 assertions_output.contains("Audio"))
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn has_active_audio_processes(&self) -> bool {
+        // Check for processes actively using audio resources
+        match Command::new("lsof").arg("-n").arg("-P").output() {
+            Ok(output) => {
+                let lsof_output = String::from_utf8_lossy(&output.stdout);
+                // Look for active audio usage patterns
+                lsof_output.lines().filter(|line| {
+                    line.contains("CoreAudio") ||
+                    line.contains("AudioUnit") ||
+                    line.contains("AVFoundation") ||
+                    line.contains("audio-out")
+                }).count() > 2 // More than just system processes
+            }
+            Err(_) => false,
+        }
+    }
+
+    pub fn play_music(&self) -> Result<String, String> {
+        self.send_media_key("play")
+    }
+
+    pub fn pause_music(&self) -> Result<String, String> {
+        self.send_media_key("pause")
+    }
+
+    fn send_media_key(&self, action: &str) -> Result<String, String> {
+        let key_code = match action {
+            "play" => "16", // F7 - Play/Pause
+            "pause" => "16", // F7 - Play/Pause (same key toggles)
+            _ => return Err(format!("Unknown media action: {}", action)),
+        };
+
+        let script = format!(
+            r#"
+            try
+                tell application "System Events"
+                    key code {} using {{command down}}
+                    return "Media key {} sent"
+                end tell
+            on error errMsg
+                return "Error: " & errMsg
+            end try
+            "#,
+            key_code, action
+        );
+
+        match Command::new("osascript").arg("-e").arg(&script).output() {
             Ok(output) => {
                 let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let parts: Vec<&str> = result.split('|').collect();
-                
-                if parts.len() >= 3 {
-                    let is_playing = parts[0] == "true";
-                    let player_name = if parts[1].is_empty() { None } else { Some(parts[1].to_string()) };
-                    let track_info = if parts[2].is_empty() { None } else { Some(parts[2].to_string()) };
-                    
-                    Ok(MusicStatus {
-                        is_playing,
-                        player_name,
-                        track_info,
-                    })
+                if result.starts_with("Error:") {
+                    Err(result)
                 } else {
-                    Err("Failed to parse music status".to_string())
+                    Ok(result)
                 }
             }
-            Err(e) => Err(format!("AppleScript execution failed: {}", e)),
+            Err(e) => Err(format!("Failed to send media key: {}", e)),
         }
     }
 
-    /// Pause all music players
-    pub fn pause_music() -> Result<String, String> {
-        let script = r#"
-            tell application "System Events"
-                set pausedApps to {}
-                
-                -- Check if Spotify is running and pause it
-                set spotifyRunning to false
-                repeat with proc in (every process whose name is "Spotify")
-                    set spotifyRunning to true
-                    exit repeat
-                end repeat
-                
-                if spotifyRunning then
-                    tell application "Spotify"
-                        if player state is playing then
-                            pause
-                            set pausedApps to pausedApps & {"Spotify"}
-                        end if
-                    end tell
-                end if
-                
-                -- Check if Music app is running and pause it
-                set musicRunning to false
-                repeat with proc in (every process whose name is "Music")
-                    set musicRunning to true
-                    exit repeat
-                end repeat
-                
-                if musicRunning then
-                    tell application "Music"
-                        if player state is playing then
-                            pause
-                            set pausedApps to pausedApps & {"Music"}
-                        end if
-                    end tell
-                end if
-                
-                -- Use media keys as fallback
-                if length of pausedApps is 0 then
-                    key code 16 using {function down} -- F7 pause key
-                    return "Used media key fallback"
-                end if
-                
-                return "Paused: " & (pausedApps as string)
-            end tell
-        "#;
-
-        match Command::new("osascript").arg("-e").arg(script).output() {
-            Ok(output) => {
-                let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                Ok(result)
-            }
-            Err(e) => Err(format!("Failed to pause music: {}", e)),
-        }
-    }
-
-    /// Resume music playback
-    pub fn resume_music() -> Result<String, String> {
-        let script = r#"
-            tell application "System Events"
-                set resumedApps to {}
-                
-                -- Check if Spotify is running and resume it
-                set spotifyRunning to false
-                repeat with proc in (every process whose name is "Spotify")
-                    set spotifyRunning to true
-                    exit repeat
-                end repeat
-                
-                if spotifyRunning then
-                    tell application "Spotify"
-                        if player state is paused then
-                            play
-                            set resumedApps to resumedApps & {"Spotify"}
-                        end if
-                    end tell
-                end if
-                
-                -- Check if Music app is running and resume it
-                set musicRunning to false
-                repeat with proc in (every process whose name is "Music")
-                    set musicRunning to true
-                    exit repeat
-                end repeat
-                
-                if musicRunning then
-                    tell application "Music"
-                        if player state is paused then
-                            play
-                            set resumedApps to resumedApps & {"Music"}
-                        end if
-                    end tell
-                end if
-                
-                -- Use media keys as fallback
-                if length of resumedApps is 0 then
-                    key code 16 using {function down} -- F7 play/pause key
-                    return "Used media key fallback"
-                end if
-                
-                return "Resumed: " & (resumedApps as string)
-            end tell
-        "#;
-
-        match Command::new("osascript").arg("-e").arg(script).output() {
-            Ok(output) => {
-                let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                Ok(result)
-            }
-            Err(e) => Err(format!("Failed to resume music: {}", e)),
-        }
-    }
-
-    /// Execute a music action
-    pub fn execute_action(action: MusicAction) -> Result<String, String> {
+    pub fn execute_action(&self, action: MusicAction) -> Result<String, String> {
         match action {
-            MusicAction::Pause => Self::pause_music(),
-            MusicAction::Resume => Self::resume_music(),
-            MusicAction::Toggle => {
-                // Check current state and toggle
-                match Self::is_music_playing() {
-                    Ok(status) => {
-                        if status.is_playing {
-                            Self::pause_music()
-                        } else {
-                            Self::resume_music()
-                        }
-                    }
-                    Err(_) => Self::pause_music(), // Default to pause if can't determine state
-                }
-            }
+            MusicAction::Play => self.play_music(),
+            MusicAction::Pause => self.pause_music(),
         }
     }
 }
