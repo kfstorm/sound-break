@@ -18,6 +18,7 @@ struct AppState {
     music_status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     meeting_status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     toggle_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    autostart_item: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
 
 // Helper function to check if status has changed significantly
@@ -193,6 +194,51 @@ async fn refresh_tray_menu(app: tauri::AppHandle, state: tauri::State<'_, AppSta
     Ok("Tray menu updated".to_string())
 }
 
+#[tauri::command]
+async fn get_autostart_status(app: tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let autostart_manager = app.autolaunch();
+        autostart_manager.is_enabled().map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    Ok(false)
+}
+
+#[tauri::command]
+async fn toggle_autostart(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let autostart_manager = app.autolaunch();
+        
+        let is_enabled = autostart_manager.is_enabled().map_err(|e| e.to_string())?;
+        
+        if is_enabled {
+            autostart_manager.disable().map_err(|e| e.to_string())?;
+        } else {
+            autostart_manager.enable().map_err(|e| e.to_string())?;
+        }
+        
+        let new_status = !is_enabled;
+        
+        // Update autostart menu item text
+        if let Some(item) = state.autostart_item.lock().unwrap().as_ref() {
+            let new_text = if new_status {
+                "✅ Start on Login"
+            } else {
+                "🚀 Start on Login"
+            };
+            let _ = item.set_text(new_text);
+        }
+        
+        Ok(new_status)
+    }
+    #[cfg(not(desktop))]
+    Ok(false)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_state = AppState {
@@ -203,12 +249,20 @@ pub fn run() {
         music_status_item: Mutex::new(None),
         meeting_status_item: Mutex::new(None),
         toggle_item: Mutex::new(None),
+        autostart_item: Mutex::new(None),
     };
 
     tauri::Builder::default()
         .manage(app_state)
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Initialize autostart plugin for desktop platforms
+            #[cfg(desktop)]
+            let _ = app.handle().plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                Some(vec!["--minimized"]) // Optional args to pass when auto-starting
+            ));
+            
             // Hide the app from the Dock on macOS
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -228,6 +282,7 @@ pub fn run() {
             let music_status = MenuItem::with_id(app, "music_status", "❓ Music Status Unknown", false, None::<&str>)?;
             let meeting_status = MenuItem::with_id(app, "meeting_status", "❓ Meeting Status Unknown", false, None::<&str>)?;
             let toggle = MenuItem::with_id(app, "toggle", "▶️ Start Monitoring", true, None::<&str>)?;
+            let autostart = MenuItem::with_id(app, "autostart", "🚀 Start on Login", true, None::<&str>)?;
             let show_window = MenuItem::with_id(app, "show_window", "Show SoundBreak", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit SoundBreak", true, None::<&str>)?;
 
@@ -237,6 +292,7 @@ pub fn run() {
                 *app_state.music_status_item.lock().unwrap() = Some(music_status.clone());
                 *app_state.meeting_status_item.lock().unwrap() = Some(meeting_status.clone());
                 *app_state.toggle_item.lock().unwrap() = Some(toggle.clone());
+                *app_state.autostart_item.lock().unwrap() = Some(autostart.clone());
             }
 
             let menu = MenuBuilder::new(app)
@@ -245,51 +301,98 @@ pub fn run() {
                 .item(&meeting_status)
                 .separator()
                 .item(&toggle)
+                .item(&autostart)
                 .item(&show_window)
                 .separator()
                 .item(&quit)
-                .build()?;
-
-            let app_handle = app.handle().clone();
+                .build()?;            let app_handle = app.handle().clone();
+            let app_handle_for_menu = app_handle.clone();
             let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .tooltip("SoundBreak - Meeting Music Controller")
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "toggle" => {
-                        let app_state = app.state::<AppState>();
-                        let result = {
-                            let service = app_state.monitoring_service.lock().unwrap();
-                            service.toggle_monitoring()
-                        };
-                        if let Ok(msg) = result {
-                            println!("SoundBreak: {}", msg);
-                            // Update tray menu after toggling
-                            let status = {
+                .on_menu_event(move |_app, event| {
+                    let app_state = app_handle_for_menu.state::<AppState>();
+                    match event.id().as_ref() {
+                        "toggle" => {
+                            let result = {
                                 let service = app_state.monitoring_service.lock().unwrap();
-                                service.get_status()
+                                service.toggle_monitoring()
                             };
-                            let _ = update_tray_menu_text(app, &status);
+                            if let Ok(msg) = result {
+                                println!("SoundBreak: {}", msg);
+                                // Update tray menu after toggling
+                                let status = {
+                                    let service = app_state.monitoring_service.lock().unwrap();
+                                    service.get_status()
+                                };
+                                let _ = update_tray_menu_text(&app_handle_for_menu, &status);
+                            }
                         }
-                    }
-                    "show_window" => {
-                        // Show the main window
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                        "show_window" => {
+                            // Show the main window
+                            if let Some(window) = app_handle_for_menu.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
+                        "autostart" => {
+                            #[cfg(desktop)]
+                            {
+                                use tauri_plugin_autostart::ManagerExt;
+                                let autostart_manager = app_handle_for_menu.autolaunch();
+                                
+                                if let Ok(is_enabled) = autostart_manager.is_enabled() {
+                                    if is_enabled {
+                                        let _ = autostart_manager.disable();
+                                        println!("SoundBreak: Autostart disabled");
+                                    } else {
+                                        let _ = autostart_manager.enable();
+                                        println!("SoundBreak: Autostart enabled");
+                                    }
+                                    
+                                    // Update autostart menu item text
+                                    if let Some(item) = app_state.autostart_item.lock().unwrap().as_ref() {
+                                        let new_text = if is_enabled {
+                                            "🚀 Start on Login"
+                                        } else {
+                                            "✅ Start on Login"
+                                        };
+                                        let _ = item.set_text(new_text);
+                                    }
+                                }
+                            }
+                        }
+                        "quit" => {
+                            std::process::exit(0);
+                        }
+                        _ => {}
                     }
-                    "quit" => {
-                        std::process::exit(0);
-                    }
-                    _ => {}
                 })
                 .build(app)?;
 
             // Store the tray icon reference
+            let app_state = app.state::<AppState>();
             {
                 let mut tray_guard = app_state.tray_icon.lock().unwrap();
                 *tray_guard = Some(tray);
+            }
+            
+            // Initialize autostart menu item text based on current status
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let autostart_manager = app.autolaunch();
+                if let Ok(is_enabled) = autostart_manager.is_enabled() {
+                    if let Some(item) = app_state.autostart_item.lock().unwrap().as_ref() {
+                        let text = if is_enabled {
+                            "✅ Start on Login"
+                        } else {
+                            "🚀 Start on Login"
+                        };
+                        let _ = item.set_text(text);
+                    }
+                }
             }
 
             // Set up window close event to hide instead of close
@@ -356,7 +459,9 @@ pub fn run() {
             detect_meetings,
             get_meeting_config,
             update_meeting_config,
-            refresh_tray_menu
+            refresh_tray_menu,
+            get_autostart_status,
+            toggle_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
