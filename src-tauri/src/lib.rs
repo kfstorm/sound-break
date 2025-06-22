@@ -6,18 +6,37 @@ use meeting_detector::{MeetingStatus, MeetingConfig};
 use music_controller::{MusicAction, MusicStatus};
 use monitoring_service::{MonitoringService, MonitoringStatus};
 use std::sync::Mutex;
-use tauri::{Manager, menu::{MenuBuilder, MenuItem}, tray::TrayIconBuilder};
+use tauri::{Manager, menu::{MenuBuilder, MenuItem}, tray::{TrayIcon, TrayIconBuilder}};
 
 // Global monitoring service state
 struct AppState {
     monitoring_service: Mutex<MonitoringService>,
+    tray_icon: Mutex<Option<TrayIcon>>,
+    last_status: Mutex<Option<MonitoringStatus>>,
+    // Store menu item references for efficient updates
+    monitoring_status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    music_status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    meeting_status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    toggle_item: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
 
-// Helper function to update tray menu with current status
-fn update_tray_menu(app: &tauri::AppHandle, state: &AppState) -> Result<(), tauri::Error> {
-    let service = state.monitoring_service.lock().unwrap();
-    let status = service.get_status();
+// Helper function to check if status has changed significantly
+fn has_status_changed(old_status: &Option<MonitoringStatus>, new_status: &MonitoringStatus) -> bool {
+    match old_status {
+        None => true, // First time, always update
+        Some(old) => {
+            // Check if any significant fields have changed
+            old.is_active != new_status.is_active ||
+            old.meeting_status.as_ref().map(|m| m.in_meeting) != new_status.meeting_status.as_ref().map(|m| m.in_meeting) ||
+            old.music_status.as_ref().map(|m| m.is_playing) != new_status.music_status.as_ref().map(|m| m.is_playing)
+        }
+    }
+}
 
+// Helper function to update tray menu with current status (using set_text on existing items)
+fn update_tray_menu_text(app: &tauri::AppHandle, status: &MonitoringStatus) -> Result<(), Box<dyn std::error::Error>> {
+    let app_state = app.state::<AppState>();
+    
     let monitoring_status_text = if status.is_active {
         "✅ Monitoring Active"
     } else {
@@ -42,27 +61,21 @@ fn update_tray_menu(app: &tauri::AppHandle, state: &AppState) -> Result<(), taur
         "▶️ Start Monitoring"
     };
 
-    // Create menu items
-    let monitoring_status = MenuItem::with_id(app, "monitoring_status", monitoring_status_text, false, None::<&str>)?;
-    let music_status = MenuItem::with_id(app, "music_status", music_status_text, false, None::<&str>)?;
-    let meeting_status = MenuItem::with_id(app, "meeting_status", meeting_status_text, false, None::<&str>)?;
-    let toggle = MenuItem::with_id(app, "toggle", toggle_text, true, None::<&str>)?;
-    let show_window = MenuItem::with_id(app, "show_window", "Show SoundBreak", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit SoundBreak", true, None::<&str>)?;
-
-    let menu = MenuBuilder::new(app)
-        .item(&monitoring_status)
-        .item(&music_status)
-        .item(&meeting_status)
-        .separator()
-        .item(&toggle)
-        .item(&show_window)
-        .separator()
-        .item(&quit)
-        .build()?;
-
-    if let Some(tray) = app.tray_by_id("main") {
-        tray.set_menu(Some(menu))?;
+    // Update menu item texts using set_text()
+    if let Some(item) = app_state.monitoring_status_item.lock().unwrap().as_ref() {
+        item.set_text(monitoring_status_text)?;
+    }
+    
+    if let Some(item) = app_state.music_status_item.lock().unwrap().as_ref() {
+        item.set_text(music_status_text)?;
+    }
+    
+    if let Some(item) = app_state.meeting_status_item.lock().unwrap().as_ref() {
+        item.set_text(meeting_status_text)?;
+    }
+    
+    if let Some(item) = app_state.toggle_item.lock().unwrap().as_ref() {
+        item.set_text(toggle_text)?;
     }
 
     Ok(())
@@ -71,28 +84,58 @@ fn update_tray_menu(app: &tauri::AppHandle, state: &AppState) -> Result<(), taur
 // Tauri commands
 #[tauri::command]
 async fn start_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let service = state.monitoring_service.lock().unwrap();
-    let result = service.start_monitoring();
-    drop(service); // Release the lock before updating tray
-    let _ = update_tray_menu(&app, &state);
+    let result = {
+        let service = state.monitoring_service.lock().unwrap();
+        service.start_monitoring()
+    };
+    
+    // Update tray menu after starting monitoring
+    if result.is_ok() {
+        let status = {
+            let service = state.monitoring_service.lock().unwrap();
+            service.get_status()
+        };
+        let _ = update_tray_menu_text(&app, &status);
+    }
+    
     result
 }
 
 #[tauri::command]
 async fn stop_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let service = state.monitoring_service.lock().unwrap();
-    let result = service.stop_monitoring();
-    drop(service); // Release the lock before updating tray
-    let _ = update_tray_menu(&app, &state);
+    let result = {
+        let service = state.monitoring_service.lock().unwrap();
+        service.stop_monitoring()
+    };
+    
+    // Update tray menu after stopping monitoring
+    if result.is_ok() {
+        let status = {
+            let service = state.monitoring_service.lock().unwrap();
+            service.get_status()
+        };
+        let _ = update_tray_menu_text(&app, &status);
+    }
+    
     result
 }
 
 #[tauri::command]
 async fn toggle_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let service = state.monitoring_service.lock().unwrap();
-    let result = service.toggle_monitoring();
-    drop(service); // Release the lock before updating tray
-    let _ = update_tray_menu(&app, &state);
+    let result = {
+        let service = state.monitoring_service.lock().unwrap();
+        service.toggle_monitoring()
+    };
+    
+    // Update tray menu after toggling monitoring
+    if result.is_ok() {
+        let status = {
+            let service = state.monitoring_service.lock().unwrap();
+            service.get_status()
+        };
+        let _ = update_tray_menu_text(&app, &status);
+    }
+    
     result
 }
 
@@ -142,7 +185,11 @@ async fn update_meeting_config(state: tauri::State<'_, AppState>, config: Meetin
 
 #[tauri::command]
 async fn refresh_tray_menu(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    update_tray_menu(&app, &state).map_err(|e| e.to_string())?;
+    let status = {
+        let service = state.monitoring_service.lock().unwrap();
+        service.get_status()
+    };
+    update_tray_menu_text(&app, &status).map_err(|e| e.to_string())?;
     Ok("Tray menu updated".to_string())
 }
 
@@ -150,6 +197,12 @@ async fn refresh_tray_menu(app: tauri::AppHandle, state: tauri::State<'_, AppSta
 pub fn run() {
     let app_state = AppState {
         monitoring_service: Mutex::new(MonitoringService::new()),
+        tray_icon: Mutex::new(None),
+        last_status: Mutex::new(None),
+        monitoring_status_item: Mutex::new(None),
+        music_status_item: Mutex::new(None),
+        meeting_status_item: Mutex::new(None),
+        toggle_item: Mutex::new(None),
     };
 
     tauri::Builder::default()
@@ -166,12 +219,27 @@ pub fn run() {
                 }
             }
 
-            // Create initial tray menu (will be updated with status shortly)
+            // Create initial tray menu with all items
+            let monitoring_status = MenuItem::with_id(app, "monitoring_status", "⏸️ Monitoring Stopped", false, None::<&str>)?;
+            let music_status = MenuItem::with_id(app, "music_status", "❓ Music Status Unknown", false, None::<&str>)?;
+            let meeting_status = MenuItem::with_id(app, "meeting_status", "❓ Meeting Status Unknown", false, None::<&str>)?;
             let toggle = MenuItem::with_id(app, "toggle", "▶️ Start Monitoring", true, None::<&str>)?;
             let show_window = MenuItem::with_id(app, "show_window", "Show SoundBreak", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit SoundBreak", true, None::<&str>)?;
 
+            // Store menu item references for later updates
+            {
+                *app_state.monitoring_status_item.lock().unwrap() = Some(monitoring_status.clone());
+                *app_state.music_status_item.lock().unwrap() = Some(music_status.clone());
+                *app_state.meeting_status_item.lock().unwrap() = Some(meeting_status.clone());
+                *app_state.toggle_item.lock().unwrap() = Some(toggle.clone());
+            }
+
             let menu = MenuBuilder::new(app)
+                .item(&monitoring_status)
+                .item(&music_status)
+                .item(&meeting_status)
+                .separator()
                 .item(&toggle)
                 .item(&show_window)
                 .separator()
@@ -179,18 +247,25 @@ pub fn run() {
                 .build()?;
 
             let app_handle = app.handle().clone();
-            let _tray = TrayIconBuilder::with_id("main")
+            let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .tooltip("SoundBreak - Meeting Music Controller")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "toggle" => {
                         let app_state = app.state::<AppState>();
-                        let service = app_state.monitoring_service.lock().unwrap();
-                        if let Ok(result) = service.toggle_monitoring() {
-                            println!("SoundBreak: {}", result);
-                            drop(service); // Release lock before updating tray
-                            let _ = update_tray_menu(app, &app_state);
+                        let result = {
+                            let service = app_state.monitoring_service.lock().unwrap();
+                            service.toggle_monitoring()
+                        };
+                        if let Ok(msg) = result {
+                            println!("SoundBreak: {}", msg);
+                            // Update tray menu after toggling
+                            let status = {
+                                let service = app_state.monitoring_service.lock().unwrap();
+                                service.get_status()
+                            };
+                            let _ = update_tray_menu_text(app, &status);
                         }
                     }
                     "show_window" => {
@@ -206,6 +281,12 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // Store the tray icon reference
+            {
+                let mut tray_guard = app_state.tray_icon.lock().unwrap();
+                *tray_guard = Some(tray);
+            }
 
             // Set up window close event to hide instead of close
             if let Some(window) = app.get_webview_window("main") {
@@ -223,19 +304,38 @@ pub fn run() {
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 let app_state = app_handle_clone.state::<AppState>();
-                let _ = update_tray_menu(&app_handle_clone, &app_state);
+                let status = {
+                    let service = app_state.monitoring_service.lock().unwrap();
+                    service.get_status()
+                };
+                let _ = update_tray_menu_text(&app_handle_clone, &status);
+                
+                // Store initial status
+                {
+                    let mut last_status = app_state.last_status.lock().unwrap();
+                    *last_status = Some(status);
+                }
 
-                // Start periodic tray menu updates every 2 seconds while monitoring is active
+                // Start periodic status check every 2 seconds
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(2));
-                    let app_state = app_handle_clone.state::<AppState>();
-                    let is_monitoring = {
+                    
+                    let current_status = {
                         let service = app_state.monitoring_service.lock().unwrap();
-                        service.get_status().is_active
+                        service.get_status()
                     };
-
-                    if is_monitoring {
-                        let _ = update_tray_menu(&app_handle_clone, &app_state);
+                    
+                    // Check if status has changed
+                    let should_update = {
+                        let last_status = app_state.last_status.lock().unwrap();
+                        has_status_changed(&*last_status, &current_status)
+                    };
+                    
+                    if should_update {
+                        let _ = update_tray_menu_text(&app_handle_clone, &current_status);
+                        // Update stored status
+                        let mut last_status = app_state.last_status.lock().unwrap();
+                        *last_status = Some(current_status);
                     }
                 }
             });
