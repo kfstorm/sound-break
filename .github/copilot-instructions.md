@@ -40,7 +40,7 @@ SoundBreak is a Tauri + Svelte desktop application for macOS that automatically 
 
 ## macOS Specific Considerations
 - Requires accessibility permissions for process monitoring
-- Uses system media keys and nowplaying-cli for universal music control
+- Uses MediaRemote framework for universal music control
 - System tray integration with native look and feel
 - Respect macOS design guidelines
 - **Universal compatibility**: No hard-coded music players or meeting apps

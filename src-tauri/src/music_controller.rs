@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MusicStatus {
@@ -21,33 +20,14 @@ impl MusicController {
     }
 
     pub fn get_music_status(&self) -> MusicStatus {
-        // Use nowplaying-cli for universal music detection
-        let is_playing = self.is_music_playing_via_nowplaying();
+        // Use MediaRemote framework for universal music detection
+        let is_playing = self.check_music_via_mediaremote().unwrap_or(false);
 
         MusicStatus {
             is_playing,
         }
     }
 
-
-    fn is_music_playing_via_nowplaying(&self) -> bool {
-        // First try the MediaRemote framework approach for macOS 15.4+
-        if let Ok(is_playing) = self.check_music_via_mediaremote() {
-            return is_playing;
-        }
-
-        // Fallback to nowplaying-cli if MediaRemote fails
-        let nowplaying_path = self.get_nowplaying_cli_path();
-
-        match Command::new(&nowplaying_path).arg("get").arg("playbackRate").output() {
-            Ok(output) => {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                let rate = output_str.trim();
-                rate.parse::<f32>().unwrap_or(0.0) > 0.0
-            }
-            Err(_) => false, // nowplaying-cli not available
-        }
-    }
 
     fn check_music_via_mediaremote(&self) -> Result<bool, String> {
         // Use AppleScript with MediaRemote framework for macOS 15.4+ compatibility
@@ -91,44 +71,11 @@ impl MusicController {
     }
 
     pub fn play_music(&self) -> Result<String, String> {
-        self.send_nowplaying_command("play")
+        self.send_mediaremote_command("play")
     }
 
     pub fn pause_music(&self) -> Result<String, String> {
-        self.send_nowplaying_command("pause")
-    }
-
-    fn send_nowplaying_command(&self, action: &str) -> Result<String, String> {
-        // First try MediaRemote framework approach for macOS 15.4+
-        if let Ok(result) = self.send_mediaremote_command(action) {
-            return Ok(result);
-        }
-
-        // Fallback to nowplaying-cli
-        let nowplaying_path = self.get_nowplaying_cli_path();
-
-        match Command::new(&nowplaying_path).arg("set").arg(action).output() {
-            Ok(output) => {
-                if output.status.success() {
-                    let result_str = String::from_utf8_lossy(&output.stdout);
-                    let result = result_str.trim();
-                    if result.is_empty() {
-                        Ok(format!("Music {} command sent successfully via nowplaying-cli", action))
-                    } else {
-                        Ok(result.to_string())
-                    }
-                } else {
-                    let error_str = String::from_utf8_lossy(&output.stderr);
-                    let error = error_str.trim();
-                    if error.is_empty() {
-                        Err(format!("Failed to {} music: command failed", action))
-                    } else {
-                        Err(format!("Failed to {} music: {}", action, error))
-                    }
-                }
-            }
-            Err(e) => Err(format!("Failed to execute nowplaying-cli {}: {}", action, e)),
-        }
+        self.send_mediaremote_command("pause")
     }
 
     fn send_mediaremote_command(&self, action: &str) -> Result<String, String> {
@@ -180,45 +127,6 @@ impl MusicController {
             MusicAction::Play => self.play_music(),
             MusicAction::Pause => self.pause_music(),
         }
-    }
-
-    fn get_nowplaying_cli_path(&self) -> PathBuf {
-        // Try to find the bundled binary relative to the executable
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                // In a bundled app, resources are typically in ../Resources/
-                let bundled_path = exe_dir.parent()
-                    .map(|p| p.join("Resources").join("nowplaying-cli"))
-                    .unwrap_or_else(|| exe_dir.join("nowplaying-cli"));
-
-                if bundled_path.exists() {
-                    return bundled_path;
-                }
-
-                // Also try directly next to the executable
-                let exe_sibling = exe_dir.join("nowplaying-cli");
-                if exe_sibling.exists() {
-                    return exe_sibling;
-                }
-            }
-        }
-
-        // Try to find it in the build output directory (during development)
-        if let Ok(out_dir) = std::env::var("OUT_DIR") {
-            let build_path = PathBuf::from(out_dir).join("bin").join("nowplaying-cli");
-            if build_path.exists() {
-                return build_path;
-            }
-        }
-
-        // Try local bin directory (for development)
-        let local_path = PathBuf::from("bin").join("nowplaying-cli");
-        if local_path.exists() {
-            return local_path;
-        }
-
-        // Final fallback to system PATH
-        PathBuf::from("nowplaying-cli")
     }
 
 }
