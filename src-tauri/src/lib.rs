@@ -212,17 +212,17 @@ async fn toggle_autostart(app: tauri::AppHandle, state: tauri::State<'_, AppStat
     {
         use tauri_plugin_autostart::ManagerExt;
         let autostart_manager = app.autolaunch();
-        
+
         let is_enabled = autostart_manager.is_enabled().map_err(|e| e.to_string())?;
-        
+
         if is_enabled {
             autostart_manager.disable().map_err(|e| e.to_string())?;
         } else {
             autostart_manager.enable().map_err(|e| e.to_string())?;
         }
-        
+
         let new_status = !is_enabled;
-        
+
         // Update autostart menu item text
         if let Some(item) = state.autostart_item.lock().unwrap().as_ref() {
             let new_text = if new_status {
@@ -232,7 +232,7 @@ async fn toggle_autostart(app: tauri::AppHandle, state: tauri::State<'_, AppStat
             };
             let _ = item.set_text(new_text);
         }
-        
+
         Ok(new_status)
     }
     #[cfg(not(desktop))]
@@ -262,11 +262,11 @@ pub fn run() {
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 Some(vec!["--minimized"]) // Optional args to pass when auto-starting
             ));
-            
+
             // Hide the app from the Dock on macOS
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            
+
             let app_state = app.state::<AppState>();
 
             // Start monitoring automatically on startup
@@ -341,7 +341,7 @@ pub fn run() {
                             {
                                 use tauri_plugin_autostart::ManagerExt;
                                 let autostart_manager = app_handle_for_menu.autolaunch();
-                                
+
                                 if let Ok(is_enabled) = autostart_manager.is_enabled() {
                                     if is_enabled {
                                         let _ = autostart_manager.disable();
@@ -350,7 +350,7 @@ pub fn run() {
                                         let _ = autostart_manager.enable();
                                         println!("SoundBreak: Autostart enabled");
                                     }
-                                    
+
                                     // Update autostart menu item text
                                     if let Some(item) = app_state.autostart_item.lock().unwrap().as_ref() {
                                         let new_text = if is_enabled {
@@ -377,7 +377,7 @@ pub fn run() {
                 let mut tray_guard = app_state.tray_icon.lock().unwrap();
                 *tray_guard = Some(tray);
             }
-            
+
             // Initialize autostart menu item text based on current status
             #[cfg(desktop)]
             {
