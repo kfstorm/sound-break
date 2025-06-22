@@ -209,6 +209,10 @@ pub fn run() {
         .manage(app_state)
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Hide the app from the Dock on macOS
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            
             let app_state = app.state::<AppState>();
 
             // Start monitoring automatically on startup
