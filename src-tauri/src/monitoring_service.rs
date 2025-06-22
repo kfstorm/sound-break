@@ -128,17 +128,19 @@ impl MonitoringService {
                 if let Ok(result) = music_controller.execute_action(MusicAction::Pause) {
                     let mut status_guard = self.status.lock().unwrap();
                     status_guard.last_action = Some(format!("Meeting started: {}", result));
-                    println!("SoundBreak: Paused music for meeting - {}", result);
                 }
+            } else {
+                *self.music_was_playing_before_meeting.lock().unwrap() = false;
             }
             *self.was_in_meeting.lock().unwrap() = true;
         } else if !now_in_meeting && was_previously_in_meeting {
             // Exiting meeting - resume music if it was playing before
-            if *self.music_was_playing_before_meeting.lock().unwrap() {
+            let should_resume = *self.music_was_playing_before_meeting.lock().unwrap();
+            
+            if should_resume {
                 if let Ok(result) = music_controller.execute_action(MusicAction::Play) {
                     let mut status_guard = self.status.lock().unwrap();
                     status_guard.last_action = Some(format!("Meeting ended: {}", result));
-                    println!("SoundBreak: Resumed music after meeting - {}", result);
                 }
                 *self.music_was_playing_before_meeting.lock().unwrap() = false;
             }
