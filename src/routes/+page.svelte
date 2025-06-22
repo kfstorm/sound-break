@@ -106,12 +106,28 @@
             <span>{monitoringStatus.meeting_status.in_meeting ? 'In Meeting' : 'No Meeting'}</span>
           </div>
 
-          {#if monitoringStatus.meeting_status.active_apps.length > 0}
+          {#if monitoringStatus.meeting_status.active_apps.filter(app => app.is_running).length > 0}
             <div class="active-apps">
               <h4>Active Meeting Apps:</h4>
               <ul>
+                {#each monitoringStatus.meeting_status.active_apps.filter(app => app.is_running) as app}
+                  <li>🟢 {app.name}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+
+          {#if monitoringStatus.meeting_status.active_apps.length > 0}
+            <div class="monitored-apps">
+              <h4>Monitored Apps:</h4>
+              <ul>
                 {#each monitoringStatus.meeting_status.active_apps as app}
-                  <li>{app.name}</li>
+                  <li>
+                    <span class="status-indicator {app.is_running ? 'running' : 'stopped'}">
+                      {app.is_running ? '🟢' : '🔴'}
+                    </span>
+                    {app.name}
+                  </li>
                 {/each}
               </ul>
             </div>

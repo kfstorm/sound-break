@@ -36,7 +36,7 @@ fn has_status_changed(old_status: &Option<MonitoringStatus>, new_status: &Monito
 // Helper function to update tray menu with current status (using set_text on existing items)
 fn update_tray_menu_text(app: &tauri::AppHandle, status: &MonitoringStatus) -> Result<(), Box<dyn std::error::Error>> {
     let app_state = app.state::<AppState>();
-    
+
     let monitoring_status_text = if status.is_active {
         "✅ Monitoring Active"
     } else {
@@ -65,15 +65,15 @@ fn update_tray_menu_text(app: &tauri::AppHandle, status: &MonitoringStatus) -> R
     if let Some(item) = app_state.monitoring_status_item.lock().unwrap().as_ref() {
         item.set_text(monitoring_status_text)?;
     }
-    
+
     if let Some(item) = app_state.music_status_item.lock().unwrap().as_ref() {
         item.set_text(music_status_text)?;
     }
-    
+
     if let Some(item) = app_state.meeting_status_item.lock().unwrap().as_ref() {
         item.set_text(meeting_status_text)?;
     }
-    
+
     if let Some(item) = app_state.toggle_item.lock().unwrap().as_ref() {
         item.set_text(toggle_text)?;
     }
@@ -88,7 +88,7 @@ async fn start_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppStat
         let service = state.monitoring_service.lock().unwrap();
         service.start_monitoring()
     };
-    
+
     // Update tray menu after starting monitoring
     if result.is_ok() {
         let status = {
@@ -97,7 +97,7 @@ async fn start_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppStat
         };
         let _ = update_tray_menu_text(&app, &status);
     }
-    
+
     result
 }
 
@@ -107,7 +107,7 @@ async fn stop_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppState
         let service = state.monitoring_service.lock().unwrap();
         service.stop_monitoring()
     };
-    
+
     // Update tray menu after stopping monitoring
     if result.is_ok() {
         let status = {
@@ -116,7 +116,7 @@ async fn stop_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppState
         };
         let _ = update_tray_menu_text(&app, &status);
     }
-    
+
     result
 }
 
@@ -126,7 +126,7 @@ async fn toggle_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppSta
         let service = state.monitoring_service.lock().unwrap();
         service.toggle_monitoring()
     };
-    
+
     // Update tray menu after toggling monitoring
     if result.is_ok() {
         let status = {
@@ -135,7 +135,7 @@ async fn toggle_monitoring(app: tauri::AppHandle, state: tauri::State<'_, AppSta
         };
         let _ = update_tray_menu_text(&app, &status);
     }
-    
+
     result
 }
 
@@ -309,7 +309,7 @@ pub fn run() {
                     service.get_status()
                 };
                 let _ = update_tray_menu_text(&app_handle_clone, &status);
-                
+
                 // Store initial status
                 {
                     let mut last_status = app_state.last_status.lock().unwrap();
@@ -319,18 +319,18 @@ pub fn run() {
                 // Start periodic status check every 2 seconds
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(2));
-                    
+
                     let current_status = {
                         let service = app_state.monitoring_service.lock().unwrap();
                         service.get_status()
                     };
-                    
+
                     // Check if status has changed
                     let should_update = {
                         let last_status = app_state.last_status.lock().unwrap();
                         has_status_changed(&*last_status, &current_status)
                     };
-                    
+
                     if should_update {
                         let _ = update_tray_menu_text(&app_handle_clone, &current_status);
                         // Update stored status
