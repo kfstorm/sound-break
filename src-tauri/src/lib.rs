@@ -1,3 +1,4 @@
+mod config;
 mod meeting_detector;
 mod music_controller;
 mod monitoring_service;
@@ -283,7 +284,12 @@ pub fn run() {
             let meeting_status = MenuItem::with_id(app, "meeting_status", "❓ Meeting Status Unknown", false, None::<&str>)?;
             let toggle = MenuItem::with_id(app, "toggle", "▶️ Start Monitoring", true, None::<&str>)?;
             let autostart = MenuItem::with_id(app, "autostart", "🚀 Start on Login", true, None::<&str>)?;
-            let show_window = MenuItem::with_id(app, "show_window", "Show SoundBreak", true, None::<&str>)?;
+            #[cfg(debug_assertions)]
+            let show_window_text = "Show SoundBreak";
+            #[cfg(not(debug_assertions))]
+            let show_window_text = "Show Settings";
+            
+            let show_window = MenuItem::with_id(app, "show_window", show_window_text, true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit SoundBreak", true, None::<&str>)?;
 
             // Store menu item references for later updates
@@ -334,6 +340,12 @@ pub fn run() {
                             if let Some(window) = app_handle_for_menu.get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
+                                
+                                // In production, emit an event to auto-open settings
+                                #[cfg(not(debug_assertions))]
+                                {
+                                    let _ = window.emit("auto-open-settings", ());
+                                }
                             }
                         }
                         "autostart" => {
@@ -397,6 +409,13 @@ pub fn run() {
 
             // Set up window close event to hide instead of close
             if let Some(window) = app.get_webview_window("main") {
+                // Show window only in development mode
+                #[cfg(debug_assertions)]
+                {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+
                 let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {

@@ -1,4 +1,5 @@
-use crate::meeting_detector::{MeetingDetector, MeetingStatus};
+use crate::config::ConfigManager;
+use crate::meeting_detector::{MeetingDetector, MeetingStatus, MeetingConfig};
 use crate::music_controller::{MusicController, MusicAction, MusicStatus};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -24,8 +25,13 @@ pub struct MonitoringService {
 
 impl MonitoringService {
     pub fn new() -> Self {
+        // Load configuration from persistent storage
+        let app_config = ConfigManager::load_config();
+        let mut detector = MeetingDetector::new();
+        detector.update_config(app_config.meeting_config);
+
         Self {
-            detector: Arc::new(Mutex::new(MeetingDetector::new())),
+            detector: Arc::new(Mutex::new(detector)),
             is_running: Arc::new(Mutex::new(false)),
             was_in_meeting: Arc::new(Mutex::new(false)),
             music_was_playing_before_meeting: Arc::new(Mutex::new(false)),
@@ -167,14 +173,26 @@ impl MonitoringService {
         self.status.lock().unwrap().clone()
     }
 
-    pub fn get_meeting_config(&self) -> crate::meeting_detector::MeetingConfig {
+    pub fn get_meeting_config(&self) -> MeetingConfig {
         let detector = self.detector.lock().unwrap();
         detector.get_config().clone()
     }
 
-    pub fn update_meeting_config(&mut self, config: crate::meeting_detector::MeetingConfig) {
-        let mut detector = self.detector.lock().unwrap();
-        detector.update_config(config);
+    pub fn update_meeting_config(&mut self, config: MeetingConfig) {
+        // Update the detector with the new config
+        {
+            let mut detector = self.detector.lock().unwrap();
+            detector.update_config(config.clone());
+        }
+        
+        // Save the configuration to persistent storage
+        let app_config = crate::config::AppConfig {
+            meeting_config: config,
+        };
+        
+        if let Err(e) = ConfigManager::save_config(&app_config) {
+            eprintln!("SoundBreak: Failed to save configuration: {}", e);
+        }
     }
 }
 

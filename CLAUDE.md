@@ -36,9 +36,11 @@ SoundBreak is a Tauri + SvelteKit desktop application for macOS that automatical
 - **`monitoring_service.rs`**: Central monitoring loop and state management
 - **`meeting_detector.rs`**: Process-based meeting detection with exact name matching
 - **`music_controller.rs`**: Universal music control via MediaRemote framework
+- **`config.rs`**: Configuration management with persistent storage
 
 ### Frontend Structure
 - **`src/routes/+page.svelte`**: Main UI with status display and controls
+- **`src/lib/SettingsModal.svelte`**: Settings modal for meeting app configuration
 - **`src/routes/+layout.ts`**: SvelteKit layout configuration
 - **`src/app.html`**: HTML template
 
@@ -86,6 +88,9 @@ SoundBreak is a Tauri + SvelteKit desktop application for macOS that automatical
 
 - Uses `tauri-plugin-autostart` for login integration
 - Requires macOS accessibility permissions for process monitoring
+- **Configuration persistence**: Meeting app settings are automatically saved to `~/Library/Application Support/com.kfstorm.sound-break/config.json`
+- **Window behavior**: Main window shows automatically in development mode (`pnpm tauri dev`) but stays hidden in production builds
+- **Production UX**: "Show Settings" tray menu item automatically opens settings modal in production
 - No tests are currently implemented in the codebase
 - Application hides from Dock using `ActivationPolicy::Accessory`
 - Frontend-backend communication uses Tauri's invoke API

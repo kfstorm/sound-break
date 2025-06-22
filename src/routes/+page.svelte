@@ -1,11 +1,14 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
+  import SettingsModal from "../lib/SettingsModal.svelte";
 
   let monitoringStatus = null;
   let isLoading = false;
   let error = null;
   let statusInterval;
+  let showSettings = false;
 
   async function toggleMonitoring() {
     isLoading = true;
@@ -45,10 +48,18 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     updateStatus();
     // Update status every 3 seconds
     statusInterval = setInterval(updateStatus, 3000);
+    
+    // Listen for auto-open-settings event (production mode)
+    const unlisten = await listen('auto-open-settings', () => {
+      showSettings = true;
+    });
+    
+    // Clean up listener on component destroy
+    return unlisten;
   });
 
   onDestroy(() => {
@@ -60,12 +71,28 @@
   function formatTimestamp(timestamp) {
     return new Date(timestamp * 1000).toLocaleTimeString();
   }
+
+  function openSettings() {
+    showSettings = true;
+  }
+
+  function closeSettings() {
+    showSettings = false;
+  }
+
+  function handleConfigUpdated() {
+    updateStatus(); // Refresh status after config update
+  }
 </script>
 
 <main class="container">
   <header>
-    <h1>🎵 SoundBreak</h1>
-    <p class="subtitle">Automatic music control for meetings</p>
+    <div class="header-content">
+      <h1>🎵 SoundBreak</h1>
+      <button class="settings-button" on:click={openSettings} title="Settings">
+        ⚙️
+      </button>
+    </div>
   </header>
 
   {#if error}
@@ -76,10 +103,12 @@
 
   <div class="status-section">
     <div class="status-card">
-      <h2>Monitoring Status</h2>
-      <div class="status-indicator">
-        <span class="status-dot {monitoringStatus?.is_active ? 'active' : 'inactive'}"></span>
-        <span>{monitoringStatus?.is_active ? 'Active' : 'Inactive'}</span>
+      <div class="card-header">
+        <h2>Monitoring</h2>
+        <div class="status-indicator">
+          <span class="status-dot {monitoringStatus?.is_active ? 'active' : 'inactive'}"></span>
+          <span>{monitoringStatus?.is_active ? 'Active' : 'Inactive'}</span>
+        </div>
       </div>
 
       <button
@@ -87,115 +116,86 @@
         disabled={isLoading}
         class="primary-button"
       >
-        {isLoading ? 'Loading...' : (monitoringStatus?.is_active ? 'Stop Monitoring' : 'Start Monitoring')}
+        {isLoading ? 'Loading...' : (monitoringStatus?.is_active ? 'Stop' : 'Start')}
       </button>
 
       {#if monitoringStatus?.last_action}
-        <p class="last-action">
-          <strong>Last Action:</strong> {monitoringStatus.last_action}
-        </p>
+        <p class="last-action">{monitoringStatus.last_action}</p>
       {/if}
     </div>
 
     <div class="status-card">
-      <h2>Meeting Status</h2>
-      {#if monitoringStatus?.meeting_status}
-        <div class="meeting-info">
+      <div class="card-header">
+        <h2>Meeting</h2>
+        {#if monitoringStatus?.meeting_status}
           <div class="status-indicator">
             <span class="status-dot {monitoringStatus.meeting_status.in_meeting ? 'meeting' : 'no-meeting'}"></span>
-            <span>{monitoringStatus.meeting_status.in_meeting ? 'In Meeting' : 'No Meeting'}</span>
+            <span>{monitoringStatus.meeting_status.in_meeting ? 'Active' : 'None'}</span>
           </div>
+        {/if}
+      </div>
 
-          {#if monitoringStatus.meeting_status.active_apps.filter(app => app.is_running).length > 0}
-            <div class="active-apps">
-              <h4>Active Meeting Apps:</h4>
-              <ul>
-                {#each monitoringStatus.meeting_status.active_apps.filter(app => app.is_running) as app}
-                  <li>🟢 {app.name}</li>
-                {/each}
-              </ul>
+      {#if monitoringStatus?.meeting_status?.active_apps?.length > 0}
+        <div class="app-list">
+          {#each monitoringStatus.meeting_status.active_apps as app}
+            <div class="app-item {app.is_running ? 'running' : 'stopped'}">
+              <span class="app-status">{app.is_running ? '🟢' : '🔴'}</span>
+              <span class="app-name">{app.name}</span>
             </div>
-          {/if}
-
-          {#if monitoringStatus.meeting_status.active_apps.length > 0}
-            <div class="monitored-apps">
-              <h4>Monitored Apps:</h4>
-              <ul>
-                {#each monitoringStatus.meeting_status.active_apps as app}
-                  <li>
-                    <span class="status-indicator {app.is_running ? 'running' : 'stopped'}">
-                      {app.is_running ? '🟢' : '🔴'}
-                    </span>
-                    {app.name}
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
+          {/each}
         </div>
       {:else}
-        <p>No meeting data available</p>
+        <p class="no-data">No apps configured</p>
       {/if}
     </div>
 
     <div class="status-card">
-      <h2>Music Status</h2>
-      {#if monitoringStatus?.music_status}
-        <div class="music-info">
+      <div class="card-header">
+        <h2>Music</h2>
+        {#if monitoringStatus?.music_status}
           <div class="status-indicator">
             <span class="status-dot {monitoringStatus.music_status.is_playing ? 'playing' : 'paused'}"></span>
             <span>{monitoringStatus.music_status.is_playing ? 'Playing' : 'Paused'}</span>
           </div>
+        {/if}
+      </div>
 
+      {#if monitoringStatus?.music_status?.player_name || monitoringStatus?.music_status?.track_info}
+        <div class="music-info">
           {#if monitoringStatus.music_status.player_name}
-            <p><strong>Player:</strong> {monitoringStatus.music_status.player_name}</p>
+            <p class="player-name">{monitoringStatus.music_status.player_name}</p>
           {/if}
-
           {#if monitoringStatus.music_status.track_info}
-            <p><strong>Track:</strong> {monitoringStatus.music_status.track_info}</p>
+            <p class="track-info">{monitoringStatus.music_status.track_info}</p>
           {/if}
         </div>
       {:else}
-        <p>No music data available</p>
+        <p class="no-data">No player detected</p>
       {/if}
 
       <div class="music-controls">
         <button on:click={() => controlMusic('pause')} disabled={isLoading} class="control-button">
-          ⏸️ Pause
+          ⏸️
         </button>
         <button on:click={() => controlMusic('play')} disabled={isLoading} class="control-button">
-          ▶️ Play
+          ▶️
         </button>
       </div>
     </div>
   </div>
 
-  <div class="info-section">
-    <h3>How it works</h3>
-    <p>SoundBreak automatically detects when you enter or exit a Feishu Meeting and pauses/resumes your music accordingly. The app runs in the background and can be controlled from the system tray.</p>
-
-    <div class="features">
-      <div class="feature">
-        <span class="feature-icon">🎯</span>
-        <span>Detects Feishu Meeting automatically</span>
-      </div>
-      <div class="feature">
-        <span class="feature-icon">🎵</span>
-        <span>Works with Spotify, Apple Music, and more</span>
-      </div>
-      <div class="feature">
-        <span class="feature-icon">⚡</span>
-        <span>Minimal system resource usage</span>
-      </div>
-    </div>
-  </div>
-
-  <footer>
-    {#if monitoringStatus?.last_check}
-      <p class="last-update">Last updated: {formatTimestamp(monitoringStatus.last_check)}</p>
-    {/if}
-  </footer>
+  {#if monitoringStatus?.last_check}
+    <footer class="last-update">
+      Updated: {formatTimestamp(monitoringStatus.last_check)}
+    </footer>
+  {/if}
 </main>
+
+<SettingsModal 
+  bind:isOpen={showSettings} 
+  on:close={closeSettings}
+  on:configUpdated={handleConfigUpdated}
+/>
 
 <style>
   :root {
@@ -207,27 +207,46 @@
   }
 
   .container {
-    max-width: 800px;
+    max-width: 700px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 16px;
     min-height: 100vh;
   }
 
   header {
-    text-align: center;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
+  }
+
+  .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .settings-button {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-top: 5px;
+  }
+
+  .settings-button:hover {
+    background: #f8f9fa;
+    border-color: #dee2e6;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   }
 
   h1 {
-    font-size: 2.5rem;
+    font-size: 1.8rem;
     margin: 0;
     color: #2c3e50;
-  }
-
-  .subtitle {
-    color: #7f8c8d;
-    font-size: 1.1rem;
-    margin: 10px 0 0 0;
   }
 
   .error {
@@ -241,31 +260,39 @@
 
   .status-section {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
   }
 
   .status-card {
     background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     border: 1px solid #e9ecef;
   }
 
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
   .status-card h2 {
-    margin-top: 0;
+    margin: 0;
     color: #2c3e50;
-    font-size: 1.3rem;
+    font-size: 1.1rem;
+    font-weight: 600;
   }
 
   .status-indicator {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 15px 0;
+    gap: 6px;
     font-weight: 500;
+    font-size: 0.9rem;
   }
 
   .status-dot {
@@ -353,68 +380,58 @@
   }
 
   .last-action {
-    margin-top: 15px;
-    padding: 10px;
+    margin-top: 12px;
+    padding: 8px;
     background-color: #f8f9fa;
-    border-radius: 6px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: #6c757d;
+  }
+
+  .app-list {
+    margin-top: 8px;
+  }
+
+  .app-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 0.9rem;
+  }
+
+  .app-status {
+    font-size: 0.8rem;
+  }
+
+  .app-name {
+    font-weight: 500;
+  }
+
+  .music-info {
+    margin: 8px 0;
+  }
+
+  .player-name, .track-info {
+    margin: 4px 0;
     font-size: 0.9rem;
     color: #6c757d;
   }
 
-  .active-apps ul {
-    list-style: none;
-    padding: 0;
-    margin: 10px 0;
-  }
-
-  .active-apps li {
-    background-color: #e3f2fd;
-    color: #1976d2;
-    padding: 6px 12px;
-    border-radius: 20px;
-    margin: 4px 0;
+  .no-data {
+    margin: 8px 0;
     font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .info-section {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e9ecef;
-    margin-bottom: 20px;
-  }
-
-  .info-section h3 {
-    margin-top: 0;
-    color: #2c3e50;
-  }
-
-  .features {
-    display: grid;
-    gap: 12px;
-    margin-top: 20px;
-  }
-
-  .feature {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .feature-icon {
-    font-size: 1.2rem;
-  }
-
-  footer {
-    text-align: center;
-    color: #7f8c8d;
-    font-size: 0.9rem;
+    color: #6c757d;
+    font-style: italic;
   }
 
   .last-update {
-    margin: 0;
+    text-align: center;
+    color: #7f8c8d;
+    font-size: 0.8rem;
+    margin: 16px 0 0 0;
+    padding-top: 16px;
+    border-top: 1px solid #e9ecef;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -449,9 +466,19 @@
       color: #bdc3c7;
     }
 
-    .active-apps li {
-      background-color: #2980b9;
+    .last-update {
+      border-top-color: #4a5f7a;
+    }
+
+    .settings-button {
+      background: #4a5f7a;
+      border-color: #5d6d7e;
       color: #ecf0f1;
+    }
+
+    .settings-button:hover {
+      background: #5d6d7e;
+      border-color: #6c7b7f;
     }
   }
 </style>
