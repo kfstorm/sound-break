@@ -1,6 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onMount, onDestroy } from "svelte";
 
   export let isOpen = false;
   
@@ -59,7 +59,7 @@
     meetingConfig.process_names = meetingConfig.process_names.filter((_, i) => i !== index);
   }
 
-  function handleKeydown(event) {
+  function handleInputKeydown(event) {
     if (event.key === 'Enter') {
       addProcessName();
     }
@@ -72,17 +72,71 @@
     dispatch('close');
   }
 
-  // Load config when modal opens
+  function handleOverlayKeydown(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      closeModal();
+    }
+  }
+
+
+  let globalKeydownHandler;
+
+  // Handle global escape key
+  function handleGlobalKeydown(event) {
+    if (event.key === 'Escape' && isOpen) {
+      closeModal();
+    }
+  }
+
+  // Load config when modal opens and manage focus/keyboard
   $: if (isOpen) {
     loadConfig();
+    // Focus the modal content when it opens for keyboard navigation
+    setTimeout(() => {
+      const modalContent = document.querySelector('.modal-content');
+      if (modalContent) modalContent.focus();
+    }, 100);
+    
+    // Add global escape key listener
+    if (typeof document !== 'undefined') {
+      document.addEventListener('keydown', handleGlobalKeydown);
+    }
+  } else {
+    // Remove listener when modal closes
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('keydown', handleGlobalKeydown);
+    }
   }
+
+  onDestroy(() => {
+    // Cleanup on component destroy
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('keydown', handleGlobalKeydown);
+    }
+  });
 </script>
 
 {#if isOpen}
-  <div class="modal-overlay" on:click={closeModal}>
-    <div class="modal-content" on:click|stopPropagation>
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div 
+    class="modal-overlay" 
+    role="button" 
+    tabindex="0"
+    aria-label="Close modal"
+    on:click={closeModal}
+    on:keydown={handleOverlayKeydown}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div 
+      class="modal-content" 
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      tabindex="-1"
+      on:click|stopPropagation
+    >
       <div class="modal-header">
-        <h2>Settings</h2>
+        <h2 id="modal-title">Settings</h2>
         <button class="close-button" on:click={closeModal}>&times;</button>
       </div>
 
@@ -129,7 +183,7 @@
             <input 
               type="text" 
               bind:value={newProcessName}
-              on:keydown={handleKeydown}
+              on:keydown={handleInputKeydown}
               placeholder="Add process..."
               class="add-input"
             />
@@ -192,6 +246,11 @@
     max-width: 500px;
     max-height: 80vh;
     overflow-y: auto;
+    outline: none;
+  }
+
+  .modal-content:focus {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(52, 152, 219, 0.5);
   }
 
   .modal-header {

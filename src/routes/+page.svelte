@@ -440,14 +440,12 @@
       background-color: #2c3e50;
     }
 
-    .status-card,
-    .info-section {
+    .status-card {
       background: #34495e;
       border-color: #4a5f7a;
     }
 
-    .status-card h2,
-    .info-section h3 {
+    .status-card h2 {
       color: #ecf0f1;
     }
 

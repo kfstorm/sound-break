@@ -9,6 +9,9 @@ use monitoring_service::{MonitoringService, MonitoringStatus};
 use std::sync::Mutex;
 use tauri::{Manager, menu::{MenuBuilder, MenuItem}, tray::{TrayIcon, TrayIconBuilder}};
 
+#[cfg(not(debug_assertions))]
+use tauri::Emitter;
+
 // Global monitoring service state
 struct AppState {
     monitoring_service: Mutex<MonitoringService>,
