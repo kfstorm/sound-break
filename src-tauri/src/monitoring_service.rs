@@ -136,7 +136,7 @@ impl MonitoringService {
         } else if !now_in_meeting && was_previously_in_meeting {
             // Exiting meeting - resume music if it was playing before
             let should_resume = *self.music_was_playing_before_meeting.lock().unwrap();
-            
+
             if should_resume {
                 if let Ok(result) = music_controller.execute_action(MusicAction::Play) {
                     let mut status_guard = self.status.lock().unwrap();

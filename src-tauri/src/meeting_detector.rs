@@ -100,14 +100,14 @@ impl MeetingDetector {
 
         for process_name in &self.config.process_names {
             let is_running = self.is_process_running(process_name);
-            
+
             // Always add the app to the list with its current status
             active_apps.push(MeetingApp {
                 name: process_name.clone(),
                 process_name: process_name.clone(),
                 is_running,
             });
-            
+
             if is_running {
                 in_meeting = true;
             }
@@ -125,15 +125,15 @@ impl MeetingDetector {
 
     fn is_process_running(&self, process_name: &str) -> bool {
         use std::process::Command;
-        
+
         // Use pgrep for exact process name matching
         // ^pattern$ ensures exact match, no partial matching
         let pattern = format!("^{}$", regex::escape(process_name));
-        
+
         let output = Command::new("pgrep")
             .arg(&pattern)
             .output();
-            
+
         match output {
             Ok(result) => {
                 // Process exists if pgrep returns success and has output
