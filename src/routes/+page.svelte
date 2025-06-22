@@ -81,9 +81,9 @@
         <span class="status-dot {monitoringStatus?.is_active ? 'active' : 'inactive'}"></span>
         <span>{monitoringStatus?.is_active ? 'Active' : 'Inactive'}</span>
       </div>
-      
-      <button 
-        on:click={toggleMonitoring} 
+
+      <button
+        on:click={toggleMonitoring}
         disabled={isLoading}
         class="primary-button"
       >
@@ -105,7 +105,7 @@
             <span class="status-dot {monitoringStatus.meeting_status.in_meeting ? 'meeting' : 'no-meeting'}"></span>
             <span>{monitoringStatus.meeting_status.in_meeting ? 'In Meeting' : 'No Meeting'}</span>
           </div>
-          
+
           {#if monitoringStatus.meeting_status.active_apps.length > 0}
             <div class="active-apps">
               <h4>Active Meeting Apps:</h4>
@@ -130,11 +130,11 @@
             <span class="status-dot {monitoringStatus.music_status.is_playing ? 'playing' : 'paused'}"></span>
             <span>{monitoringStatus.music_status.is_playing ? 'Playing' : 'Paused'}</span>
           </div>
-          
+
           {#if monitoringStatus.music_status.player_name}
             <p><strong>Player:</strong> {monitoringStatus.music_status.player_name}</p>
           {/if}
-          
+
           {#if monitoringStatus.music_status.track_info}
             <p><strong>Track:</strong> {monitoringStatus.music_status.track_info}</p>
           {/if}
@@ -147,11 +147,8 @@
         <button on:click={() => controlMusic('pause')} disabled={isLoading} class="control-button">
           ⏸️ Pause
         </button>
-        <button on:click={() => controlMusic('resume')} disabled={isLoading} class="control-button">
-          ▶️ Resume
-        </button>
-        <button on:click={() => controlMusic('toggle')} disabled={isLoading} class="control-button">
-          ⏯️ Toggle
+        <button on:click={() => controlMusic('play')} disabled={isLoading} class="control-button">
+          ▶️ Play
         </button>
       </div>
     </div>
@@ -160,7 +157,7 @@
   <div class="info-section">
     <h3>How it works</h3>
     <p>SoundBreak automatically detects when you enter or exit a Feishu Meeting and pauses/resumes your music accordingly. The app runs in the background and can be controlled from the system tray.</p>
-    
+
     <div class="features">
       <div class="feature">
         <span class="feature-icon">🎯</span>
