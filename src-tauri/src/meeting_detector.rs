@@ -70,6 +70,7 @@ impl Default for MeetingConfig {
         Self {
             process_names: vec![
                 "Lark Helper (Iron)".to_string(),
+                "TencentMeeting".to_string(),
             ],
         }
     }
