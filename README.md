@@ -29,6 +29,40 @@ SoundBreak is a macOS desktop application that automatically pauses and resumes 
   - macOS MediaRemote framework for universal music control
   - Native `pgrep` for reliable process detection
 
+## Installation
+
+### Download & Install
+
+1. Download the latest release from [GitHub Releases](https://github.com/kfstorm/sound-break/releases)
+2. Download the appropriate DMG file for your Mac:
+   - `soundbreak-aarch64.dmg` for Apple Silicon (M1/M2/M3)
+   - `soundbreak-x86_64.dmg` for Intel Macs
+
+### macOS Security Notice
+
+Since SoundBreak is not code-signed with an Apple Developer certificate, macOS Gatekeeper will block it by default.
+
+**If you see "SoundBreak is damaged and can't be opened":**
+
+1. **Terminal Method (Recommended):**
+
+   ```bash
+   # Remove quarantine attribute
+   xattr -d com.apple.quarantine /Applications/SoundBreak.app
+   ```
+
+2. **Right-click Method:**
+   - Right-click the SoundBreak app → "Open"
+   - Click "Open" in the security dialog
+
+3. **System Settings:**
+   - Go to System Settings → Privacy & Security
+   - Look for SoundBreak and click "Open Anyway"
+
+**Compatibility:** These methods work on macOS 15.4.1 and earlier. If you experience issues on newer macOS versions, building from source (see Development Setup below) creates a locally signed version.
+
+**Why this happens:** macOS Gatekeeper blocks unsigned apps. SoundBreak is safe - you can verify by reviewing the open-source code.
+
 ## Development Setup
 
 ### Prerequisites
