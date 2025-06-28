@@ -97,12 +97,11 @@ pnpm tauri build
 
 ### Meeting Applications
 
-SoundBreak detects meeting applications by their exact process names. Common examples:
+SoundBreak comes with built-in support for:
+- **Feishu Meetings** (Lark)
+- **Tencent Meetings**
 
-- **Feishu/Lark**: `Lark Helper (Iron)`
-- **Zoom**: `zoom.us` or `Zoom`
-- **Microsoft Teams**: `Microsoft Teams`
-- **WebEx**: `Cisco Webex Meetings`
+You can add additional meeting applications through the Settings menu by configuring their exact process names.
 
 ### Finding Process Names
 
