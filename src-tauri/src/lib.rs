@@ -260,6 +260,9 @@ pub fn run() {
         .manage(app_state)
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Ensure single instance
+            #[cfg(desktop)]
+            let _ = app.handle().plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
             // Initialize autostart plugin for desktop platforms
             #[cfg(desktop)]
             let _ = app.handle().plugin(tauri_plugin_autostart::init(
