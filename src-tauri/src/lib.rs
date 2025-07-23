@@ -260,6 +260,10 @@ pub fn run() {
         .manage(app_state)
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Hide the app from the Dock on macOS - do this first before any other setup
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Ensure single instance
             #[cfg(desktop)]
             let _ = app.handle().plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
@@ -269,10 +273,6 @@ pub fn run() {
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 None::<Vec<&str>> // No additional arguments needed
             ));
-
-            // Hide the app from the Dock on macOS
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let app_state = app.state::<AppState>();
 
