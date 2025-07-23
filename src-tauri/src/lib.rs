@@ -264,7 +264,7 @@ pub fn run() {
             #[cfg(desktop)]
             let _ = app.handle().plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                Some(vec!["--minimized"]) // Optional args to pass when auto-starting
+                None::<Vec<&str>> // No additional arguments needed
             ));
 
             // Hide the app from the Dock on macOS
@@ -291,7 +291,7 @@ pub fn run() {
             let show_window_text = "Show SoundBreak";
             #[cfg(not(debug_assertions))]
             let show_window_text = "Show Settings";
-            
+
             let show_window = MenuItem::with_id(app, "show_window", show_window_text, true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit SoundBreak", true, None::<&str>)?;
 
@@ -343,7 +343,7 @@ pub fn run() {
                             if let Some(window) = app_handle_for_menu.get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
-                                
+
                                 // In production, emit an event to auto-open settings
                                 #[cfg(not(debug_assertions))]
                                 {
